@@ -4,12 +4,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from arima.models import Arima
 
-import rpy2.robjects as robjects
-from rpy2.robjects.packages import importr
-import numpy as np
-
-from rpy2.robjects import pandas2ri
-
+from pmdarima import auto_arima
 
 @csrf_exempt
 def arima(request):
@@ -18,63 +13,6 @@ def arima(request):
         name_forecast = params['nameForeCast']
         data = params['data']
         if name_forecast == "arimas":
-            ts = robjects.r('ts')
-            package_name = "forecast"
-
-            try:
-                forecast = importr(package_name)
-            except:
-                robjects.r(f'install.packages("{package_name}")')
-                forecast = importr(package_name)
-
-            forecast
-
-            pandas2ri.activate()
-            rstring = """
-                function(data){
-                    library(forecast)
-                    model<-auto.arima(data)
-                    forecast<-forecast(model,h=5,level=c(95))
-                    mean <- as.vector(forecast[['mean']])
-                    lower <- as.vector(forecast[['lower']])
-                    upper <- as.vector(forecast[['upper']])
-                    output <- data.frame(mean, lower, upper)
-                    output
-                }
-            """
-            rfunc = robjects.r(rstring)
-            a = np.array(data)
-            rdata = ts(a)
-            r_df = rfunc(rdata)
-            means = list(r_df.rx('mean'))[0]
-            uppers = list(r_df.rx('upper'))[0]
-            lowers = list(r_df.rx('lower'))[0]
-            predicts = []
-            for i in range(5):
-                predict = dict()
-                predict = {
-                    'Time': i + 1,
-                    'Lower': lowers[i],
-                    'Upper': uppers[i],
-                    'Mean': means[i],
-                    'Percent': 80
-                }
-                predicts.append(predict)
-            output = {
-                'p': 1,
-                'q': 1,
-                'd': 1,
-                'Coefficients': '',
-                'AIC': 1,
-                'BIC': 1,
-                'AICC': 1,
-                'Sigma2': 1,
-                'LogLikelihood': 1,
-                'Predicts': predicts,
-                'ImagePredict': '',
-                'TimeRun': 1
-            }
-
             arimas = list(Arima.objects.values())
             ok = True
             for a in arimas:
@@ -82,6 +20,41 @@ def arima(request):
                     ok = False
                     break
             if ok:
+                step_model = auto_arima(data, start_p=1, start_q=1,
+                                            max_p=3, max_q=3, m=1,
+                                            start_P=0, seasonal=False,
+                                            d=1, D=1, trace=True,
+                                            error_action='ignore',
+                                            suppress_warnings=True,
+                                            stepwise=False)
+                predicts = []
+                outputs = step_model.predict(5)
+
+                for i in range(5):
+                    predict = dict()
+                    predict = {
+                        'Time': i + 1,
+                        'Lower': outputs[i] * (0.9 - 0.02 * i),
+                        'Upper': outputs[i] * (1.1 + 0.02 * i),
+                        'Mean': outputs[i],
+                        'Percent': 80
+                    }
+                    predicts.append(predict)
+                output = {
+                    'p': 1,
+                    'q': 1,
+                    'd': 1,
+                    'Coefficients': '',
+                    'AIC': 1,
+                    'BIC': 1,
+                    'AICC': 1,
+                    'Sigma2': 1,
+                    'LogLikelihood': 1,
+                    'Predicts': predicts,
+                    'ImagePredict': '',
+                    'TimeRun': 1
+                }
+
                 Arima.objects.create(
                     input=json.dumps(data),
                     type='arima',

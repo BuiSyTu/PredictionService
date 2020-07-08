@@ -18,7 +18,6 @@ from django.urls import path
 from arima import views
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
     path('arimas', views.arima),
     path('arimas/<id>', views.arima_detail)
 ]
